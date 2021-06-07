@@ -2,4 +2,4 @@
 
 A [workflowr][] project.
 
-[workflowr]: https://github.com/jdblischak/workflowr
+[Project]: https://emanuelsoda.github.io/ML_R/
