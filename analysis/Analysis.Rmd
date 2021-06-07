@@ -1,0 +1,110 @@
+---
+title: "Analysis"
+author: "Emanuel Michele Soda"
+date: "6/6/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(pheatmap)
+library(stringr)
+library("GGally")
+library(factoextra)
+library(plotly)
+library("gridExtra")
+source("code/plot_Scatterplot.R")
+library(caret)
+library(mlbench)
+library("M3C")
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r read data}
+train <- read_csv(file = "data/train.csv", col_types = cols(.default = col_double(),
+  class = col_factor()))
+row.names(train) <- paste("Sample", 1:dim(train)[1], sep = "_")
+class_name <- train$class
+```
+
+
+
+```{r number of sample}
+train %>%  group_by(class) %>% summarise(numberOfSample = n()) %>% 
+  ggplot(data=., aes(x=class, y=numberOfSample, fill= class)) +
+  geom_bar(stat="identity") +
+  ggtitle("Number of sample for each class") + 
+  geom_text(aes(label=numberOfSample), position = position_stack(vjust=0.5), size=10) +
+  scale_fill_brewer(palette="Set3") +
+  theme_minimal()
+
+train %>% mutate(type = if_else(str_detect(class, regex(pattern = "t-")), 
+                                true = "Trisomic", 
+                                false = "Control")) %>% 
+  group_by(type) %>% summarise(numberOfSample = n()) %>% 
+  ggplot(data=., aes(x=type, y=numberOfSample, fill=type)) +
+  geom_bar(stat="identity") +
+  ggtitle("Number of sample for each Genotype") + 
+  geom_text(aes(label=numberOfSample), position = position_stack(vjust=0.5), size=10) +
+  scale_fill_manual(values=c("#999999", "#E69F00")) +
+  theme_minimal()
+
+
+ggcorr(train, hjust = 0.75, size = 2, color = "grey50")
+
+```
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r PCA, echo=FALSE}
+pca_train <- prcomp(train[,1:76], scale = TRUE)
+fviz_eig(pca_train, barfill = "steelblue", 
+         barcolor = "black") + ggtitle("Percentage of Exaplained variances")
+pca_data <- data.frame(pca_train$x)
+pca_data$class <- class_name
+
+```
+
+```{r Interactive Scatterplot PCA, echo=FALSE}
+fig <- plot_ly(pca_data, x = ~PC1, y = ~PC2, z = ~PC3, color = ~class)
+fig <- fig %>% add_markers()
+fig
+```
+
+```{r  Scatterplot PCA, echo=FALSE}
+plot_Scatterplot(pca_data)
+```
+
+# Recursive feature elimination
+```{r fetature Selection, echo=FALSE}
+# run the RFE algorithm
+control <- rfeControl(functions=rfFuncs, method="cv", number=10)
+results <- rfe(train[, 1:76], class_name, sizes=c(1:20), rfeControl=control)
+
+# summarize the results
+print(results)
+```
+
+```{r Plot fetature Selection, echo=FALSE}
+# plot the results
+plot(results, type=c("g", "o"))
+
+# list the chosen features
+predictors(results)
+train_filtered <- train %>%  select(predictors(results)) %>% 
+  ggplot(., aes(x=dose, y=len, fill=supp)) +
+  geom_boxplot()
+
+
+
+
+```
