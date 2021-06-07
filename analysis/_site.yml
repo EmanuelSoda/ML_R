@@ -19,3 +19,6 @@ output:
     toc_float: yes
     theme: cosmo
     highlight: textmate
+    code_folding: hide
+    fig_caption: yes
+    df_print: paged
