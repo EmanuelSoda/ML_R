@@ -69,7 +69,7 @@ pca_data$class <- class_name
 
 ```
 
-```{r Interactive Scatterplot PCA, echo=FALSE, fig.height=15, fig.width=20}
+```{r Interactive Scatterplot PCA, echo=FALSE, fig.height=15, fig.width=15}
 fig <- plot_ly(pca_data, x = ~PC1, y = ~PC2, z = ~PC3, color = ~class)
 fig <- fig %>% add_markers()
 fig
