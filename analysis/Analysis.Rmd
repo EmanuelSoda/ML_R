@@ -2,8 +2,10 @@
 title: "Machine Learning Projet"
 author: "Emanuel Michele Soda"
 date: "6/6/2021"
-output: html_document
-editor_options: 
+output:
+  pdf_document: default
+  html_document: default
+editor_options:
   chunk_output_type: console
 ---
 
@@ -20,15 +22,16 @@ source("code/plot_Scatterplot.R")
 library(caret)
 library(mlbench)
 library("M3C")
+library(doParallel)
 ```
 
 # Read Data 
-
 ```{r read data}
 train <- read_csv(file = "data/train.csv", col_types = cols(.default = col_double(),
   class = col_factor()))
 row.names(train) <- paste("Sample", 1:dim(train)[1], sep = "_")
 class_name <- train$class
+train <- train %>%  select(-SOD1_N)
 ```
 
 
@@ -54,14 +57,15 @@ train %>% mutate(type = if_else(str_detect(class, regex(pattern = "t-")),
   theme_minimal()
 
 
-ggcorr(train, hjust = 0.75, size = 2, color = "grey50")
+ggcorr(train[, !colnames(train) %in% "class"], hjust = 0.75, size = 2, color = "grey50")
 
 ```
 
 # PCA plots
-
 ```{r PCA, echo=FALSE}
-pca_train <- prcomp(train[,1:76], scale = TRUE)
+pca_train <- prcomp(train[, !colnames(train) %in% "class"], 
+                    scale = TRUE)
+
 fviz_eig(pca_train, barfill = "steelblue", 
          barcolor = "black") + ggtitle("Percentage of Exaplained variances")
 pca_data <- data.frame(pca_train$x)
@@ -79,11 +83,32 @@ fig
 plot_Scatterplot(pca_data)
 ```
 
+# Clustering 
+## WSS plot
+```{r WSS plot, echo=FALSE}
+fviz_nbclust(pca_data[, -76], kmeans, method = "wss")
+```
+
+## Shouette plot
+```{r Shouette plot, echo=FALSE}
+fviz_nbclust(pca_data[, -76], kmeans, method = "silhouette")
+```
+
+## Clustering plot 
+```{r Clustering plot , echo=FALSE}
+km <- kmeans(pca_data[, -76], centers = 2, nstart = 25)
+fviz_cluster(km, data = pca_data[, -76], 
+             ggtheme = theme_minimal())
+```
+
+
+
 # Fetature Selection
 ```{r fetature Selection, echo=FALSE}
 # run the RFE algorithm
-control <- rfeControl(functions=rfFuncs, method="cv", number=10)
-results <- rfe(train[, 1:76], class_name, sizes=c(1:20), rfeControl=control)
+control <- rfeControl(functions=rfFuncs, method="cv", number=5)
+results <- rfe(train[, !colnames(train) %in% "class"],
+               class_name, sizes=c(1:20), rfeControl=control)
 
 # summarize the results
 print(results)
@@ -96,16 +121,71 @@ plot(results, type=c("g", "o"))
 # list the chosen features
 predictors(results)
 
-
 train %>%  select(predictors(results)) %>%  
   mutate(class = class_name) %>%  group_by(class)  %>% 
   ggplot(., aes(y=class, fill=class)) +
   geom_boxplot(outlier.colour="black", outlier.shape=16,
              outlier.size=2, notch=T) + 
   scale_fill_brewer(palette="Set3")
+
 train %>%  select(predictors(results)[1:3]) %>%  
   mutate(class = class_name) %>% 
 
   ggpairs(., aes(colour = class, alpha = 0.4)) 
 ```
 
+
+
+```{r Plot fetature Selection2, echo=FALSE}
+# plot the results
+plot(results, type=c("g", "o"))
+
+# list the chosen features
+#tran %>%  filter(predictors(results)) 
+
+```
+
+# Model selection
+```{r Model selection, echo=FALSE}
+cl <- makePSOCKcluster(8)
+registerDoParallel(cl)
+filtered_train <- train %>%  select(predictors(results))  %>%
+  mutate(class = class_name)
+# prepare training scheme
+control <- trainControl(method="repeatedcv", number=5, repeats=3)
+# train the LVQ model
+modelLvq <- train(class~., data=filtered_train, method="lvq", trControl=control)
+# train the GBM model1
+modelGbm <- train(class~., data=filtered_train, method="gbm", trControl=control, verbose=FALSE)
+
+# train the SVM model
+modelSvm <- train(class~., data=filtered_train, method="svmRadial", trControl=control)
+
+# train the Linear Discriminant Analysis
+modelLDA <- train(class~., data=filtered_train, method="lda", trControl=control)
+
+# train the Random Forest
+modelRF <- train(class~., data=filtered_train, method="ordinalRF", trControl=control)
+
+# collect resamples
+results <- resamples(list(LVQ=modelLvq, GBM=modelGbm, 
+                          SVM=modelSvm, LDA=modelLDA, 
+                          RF=modelRF))
+# summarize the distributions
+summary(results)
+# boxplots of results
+bwplot(results)
+# dot plots of results
+dotplot(results)
+stopCluster(cl)
+```
+
+
+```{r Model selection2, echo=FALSE}
+test <- read_csv(file = "data/test.csv", col_types = cols(.default = col_double(),
+  class = col_factor()))
+
+predict(newdata = test, modelGbm)
+
+
+```
